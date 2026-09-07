@@ -289,6 +289,9 @@
         </main>
     </div>
 
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
     <script>
         // MASUKKAN URL GOOGLE APPS SCRIPT WEB APP DI SINI
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyBaR2jESPuZ6gaHRvUnEMeXfZGqRwsTyiFTzc91NLqcS_yGlHU-zYdt45SSOY7Cv2J/exec";
@@ -299,6 +302,66 @@
         const itemsPerPage = 30;
         let statusChartInstance = null;
         let rtBarChartInstance = null;
+
+        /**
+         * Mengubah string tanggal (ISO, YYYY-MM-DD, atau objek Tanggal) menjadi format dd/mm/yyyy.
+         */
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            let str = String(dateStr).trim();
+            if (!str) return '-';
+
+            // Jika format YYYY-MM-DD atau YYYY/MM/DD (misalnya ISO "1990-05-20" / "1990-05-20T00:00:00.000Z")
+            const ymdMatch = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+            if (ymdMatch) {
+                const year = ymdMatch[1];
+                const month = ymdMatch[2].padStart(2, '0');
+                const day = ymdMatch[3].padStart(2, '0');
+                return `${day}/${month}/${year}`;
+            }
+
+            // Jika sudah format DD-MM-YYYY atau DD/MM/YYYY
+            const dmyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+            if (dmyMatch) {
+                const day = dmyMatch[1].padStart(2, '0');
+                const month = dmyMatch[2].padStart(2, '0');
+                const year = dmyMatch[3];
+                return `${day}/${month}/${year}`;
+            }
+
+            // Fallback parsing tanggal menggunakan objek Date JavaScript
+            const dateObj = new Date(str);
+            if (!isNaN(dateObj.getTime())) {
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                return `${day}/${month}/${year}`;
+            }
+
+            return str;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-rose-600' : type === 'success' ? 'bg-emerald-600' : 'bg-slate-800';
+            toast.className = `${bgColor} text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
+            toast.innerHTML = `<i data-lucide="${type === 'error' ? 'alert-circle' : 'check-circle'}" class="w-4 h-4"></i><span>${message}</span>`;
+            
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
 
         // Fetch Data dari Google Apps Script API
         async function fetchSpreadsheetData() {
@@ -317,7 +380,7 @@
                     setSyncStatus('success', 'Tersambung');
                 } else {
                     setSyncStatus('error', 'Gagal Memuat');
-                    alert("Error dari Spreadsheet: " + json.error);
+                    showToast("Error dari Spreadsheet: " + json.error, 'error');
                 }
             } catch (err) {
                 setSyncStatus('error', 'Koneksi Terputus');
@@ -346,13 +409,14 @@
 
                 if (json.success) {
                     setSyncStatus('success', 'Tersimpan');
+                    showToast("Status berhasil diperbarui!", 'success');
                 } else {
                     voter.status = oldStatus; // Revert
                     updateStats();
                     updateChart();
                     renderTable();
                     setSyncStatus('error', 'Gagal Simpan');
-                    alert("Gagal memperbarui status di Google Sheet");
+                    showToast("Gagal memperbarui status di Google Sheet", 'error');
                 }
             } catch (err) {
                 voter.status = oldStatus;
@@ -360,6 +424,7 @@
                 updateChart();
                 renderTable();
                 setSyncStatus('error', 'Koneksi Terputus');
+                showToast("Koneksi gagal saat menyimpan status", 'error');
             }
         }
 
@@ -426,6 +491,8 @@
                 if (row.status === 'Pemilih') selectStyle = 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold';
                 if (row.status === 'Bukan Pemilih') selectStyle = 'bg-rose-50 text-rose-800 border-rose-300 font-bold';
 
+                const formattedDate = formatDate(row.tglLahir);
+
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-slate-50 transition-colors';
                 tr.innerHTML = `
@@ -434,7 +501,7 @@
                     <td class="py-2.5 px-2.5 text-center font-mono text-[11px] ${tdBorderClass}">${row.nik}</td>
                     <td class="py-2.5 px-2.5 text-left font-semibold text-slate-900 ${tdBorderClass}">${row.nama}</td>
                     <td class="py-2.5 px-2.5 text-center ${tdBorderClass}">${row.jk}</td>
-                    <td class="py-2.5 px-2.5 text-center text-[11px] ${tdBorderClass}">${row.tglLahir}</td>
+                    <td class="py-2.5 px-2.5 text-center text-[11px] font-medium text-slate-700 ${tdBorderClass}">${formattedDate}</td>
                     <td class="py-2.5 px-2.5 text-center ${tdBorderClass}"><span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px]">${row.rt}</span></td>
                     <td class="py-2.5 px-2.5 text-center ${tdBorderClass}"><span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 font-semibold text-[11px]">${row.tps}</span></td>
                     <td class="py-2.5 px-2.5 text-center ${tdBorderClass}">
@@ -595,7 +662,7 @@
             doc.text("LAPORAN DATA SI-PEMILIH REALTIME", 14, 15);
 
             const tableRows = filteredData.map((row, index) => [
-                index + 1, row.nkk, row.nik, row.nama, row.jk, row.tglLahir, row.rt, row.tps, row.status
+                index + 1, row.nkk, row.nik, row.nama, row.jk, formatDate(row.tglLahir), row.rt, row.tps, row.status
             ]);
 
             doc.autoTable({
